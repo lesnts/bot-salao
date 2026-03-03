@@ -23,7 +23,7 @@ def start(message):
         "💇‍♀️ Bem-vinda ao Salão Bella!\n\nEscolha uma opção:",
         reply_markup=markup
     )
-   @bot.message_handler(func=lambda message: message.text == "📅 Agendar horário")
+@bot.message_handler(func=lambda message: message.text == "📅 Agendar horário")
 def botao_agendar(message):
     usuarios[message.chat.id] = {"etapa": "nome"}
     bot.send_message(message.chat.id, "Qual é seu nome?")
