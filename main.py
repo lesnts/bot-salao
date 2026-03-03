@@ -1,7 +1,7 @@
 import telebot
 
-TOKEN = "8678762831:AAFns_JbEsHKwV5V0uXJCXd56lH1FWqD4Pw"
-ADMIN_ID = "1532248370" main.py # seu ID
+TOKEN = "8678762831:AAEs4zyhCk-iDSY1V8UwNeTmJ-JGYmhUn2U"
+ADMIN_ID = 1532248370  # seu ID
 
 bot = telebot.TeleBot(TOKEN)
 
