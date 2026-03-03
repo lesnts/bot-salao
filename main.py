@@ -73,9 +73,10 @@ def responder(message):
 
             # Salvar em arquivo
         with open("agendamentos.txt", "a", encoding="utf-8") as arquivo:
-                arquivo.write(
-                    f"Nome: {nome} | Telefone: {telefone} | Serviço: {servico} | Horário: {horario}\n"
-                )
+            arquivo.write(
+                f"Nome: {nome} | Telefone: {telefone} | Serviço: {servico} | 
+        Horário: {horario}\n"
+            )
 
             # ✅ NOTIFICAÇÃO PARA VOCÊ
             mensagem_admin = (
