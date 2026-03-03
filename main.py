@@ -58,7 +58,7 @@ def responder(message):
 
                 # Verificar se horário já existe              
         elif etapa == "horario":
-        horario = message.text
+            horario = message.text
 
     # Verificar se horário já existe
     try:
