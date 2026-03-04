@@ -9,101 +9,111 @@ bot = telebot.TeleBot(TOKEN)
 
 usuarios = {}
 
+# ================= MENU =================
+
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     btn1 = types.KeyboardButton("📅 Agendar horário")
     btn2 = types.KeyboardButton("📋 Ver agendamentos")
 
-    markup.add(btn1)
-    markup.add(btn2)
+    markup.add(btn1, btn2)
 
     bot.send_message(
         message.chat.id,
         "💇‍♀️ Bem-vinda ao Salão Bella!\n\nEscolha uma opção:",
         reply_markup=markup
     )
+
+# ================= AGENDAR =================
+
 @bot.message_handler(func=lambda message: message.text == "📅 Agendar horário")
 def botao_agendar(message):
     usuarios[message.chat.id] = {"etapa": "nome"}
     bot.send_message(message.chat.id, "Qual é seu nome?")
+
+# ================= FLUXO =================
+
 @bot.message_handler(func=lambda message: True)
 def responder(message):
     chat_id = message.chat.id
 
-    if chat_id in usuarios:
-        etapa = usuarios[chat_id]["etapa"]
+    if chat_id not in usuarios:
+        return
 
-        if etapa == "nome":
-            usuarios[chat_id]["nome"] = message.text
-            usuarios[chat_id]["etapa"] = "telefone"
-            bot.send_message(chat_id, "Digite seu telefone com DDD:")
+    etapa = usuarios[chat_id]["etapa"]
 
-        elif etapa == "telefone":
-            usuarios[chat_id]["telefone"] = message.text
-            usuarios[chat_id]["etapa"] = "servico"
-            bot.send_message(chat_id, "Qual serviço deseja?")
+    if etapa == "nome":
+        usuarios[chat_id]["nome"] = message.text
+        usuarios[chat_id]["etapa"] = "telefone"
+        bot.send_message(chat_id, "Digite seu telefone com DDD:")
 
-        elif etapa == "servico":
-            usuarios[chat_id]["servico"] = message.text
-            usuarios[chat_id]["etapa"] = "horario"
-            bot.send_message(chat_id,
-                 "Escolha um horário disponível:\n"
-                 "10:00\n"
-                 "11:00\n"
-                 "14:00\n"
-                 "15:00\n"
-                 "16:00\n\n"
-                 "Ou digite outro se necessário:")
+    elif etapa == "telefone":
+        usuarios[chat_id]["telefone"] = message.text
+        usuarios[chat_id]["etapa"] = "servico"
+        bot.send_message(chat_id, "Qual serviço deseja?")
 
-                # Verificar se horário já existe              
-        elif etapa == "horario":
-            horario = message.text
+    elif etapa == "servico":
+        usuarios[chat_id]["servico"] = message.text
+        usuarios[chat_id]["etapa"] = "horario"
+        bot.send_message(
+            chat_id,
+            "Escolha um horário disponível:\n"
+            "10:00\n"
+            "11:00\n"
+            "14:00\n"
+            "15:00\n"
+            "16:00\n\n"
+            "Ou digite outro se necessário:"
+        )
 
-    # Verificar se horário já existe
-    try:
-        with open("agendamentos.txt", "r", encoding="utf-8") as arquivo:
-            if horario in arquivo.read():
-                bot.send_message(chat_id, "❌ Esse horário já foi reservado. Escolha outro.")
-                return
-    except:
-        pass
+    elif etapa == "horario":
+        horario = message.text
 
-    usuarios[chat_id]["horario"] = horario
+        # Verificar se já existe
+        try:
+            with open("agendamentos.txt", "r", encoding="utf-8") as arquivo:
+                if horario in arquivo.read():
+                    bot.send_message(chat_id, "❌ Esse horário já foi reservado. Escolha outro.")
+                    return
+        except:
+            pass
 
-            # Salvar em arquivo
+        usuarios[chat_id]["horario"] = horario
+
+        nome = usuarios[chat_id]["nome"]
+        telefone = usuarios[chat_id]["telefone"]
+        servico = usuarios[chat_id]["servico"]
+
+        # Salvar
         with open("agendamentos.txt", "a", encoding="utf-8") as arquivo:
             arquivo.write(
-                f"Nome: {nome} | Telefone: {telefone} | Serviço: {servico} | 
-        Horário: {horario}\n"
+                f"ID:{chat_id} | Nome:{nome} | Telefone:{telefone} | Serviço:{servico} | Horário:{horario}\n"
             )
 
-            # ✅ NOTIFICAÇÃO PARA VOCÊ
-            mensagem_admin = (
-                "📢 NOVO AGENDAMENTO!\n\n"
-                f"👤 Nome: {nome}\n"
-                f"📞 Telefone: {telefone}\n"
-                f"💅 Serviço: {servico}\n"
-                f"🕒 Horário: {horario}"
-            )
+        # Notificação admin
+        mensagem_admin = (
+            "📢 NOVO AGENDAMENTO!\n\n"
+            f"👤 Nome: {nome}\n"
+            f"📞 Telefone: {telefone}\n"
+            f"💅 Serviço: {servico}\n"
+            f"🕒 Horário: {horario}"
+        )
 
-            bot.send_message(ADMIN_ID, mensagem_admin)
+        bot.send_message(ADMIN_ID, mensagem_admin)
+        bot.send_message(chat_id, "✅ Pedido enviado! Em breve entraremos em contato.")
 
-            bot.send_message(chat_id,
-                             "✅ Pedido enviado! Em breve entraremos em contato.")
+        del usuarios[chat_id]
 
-            del usuarios[chat_id]
+# ================= VER AGENDAMENTOS =================
 
-    else:
-        @bot.message_handler(func=lambda message: message.text == "📋 Ver agendamentos")
+@bot.message_handler(func=lambda message: message.text == "📋 Ver agendamentos")
 def ver_agendamentos(message):
     chat_id = message.chat.id
 
     try:
-        with open("agendamentos.txt", "a", encoding="utf-8") as arquivo:
-    arquivo.write(
-        f"ID:{chat_id} | Nome:{nome} | Telefone:{telefone} | Serviço:{servico} | Horário:{horario}\n"
-        )
+        with open("agendamentos.txt", "r", encoding="utf-8") as arquivo:
+            linhas = arquivo.readlines()
 
         meus = [l for l in linhas if f"ID:{chat_id}" in l]
 
@@ -112,7 +122,9 @@ def ver_agendamentos(message):
         else:
             bot.send_message(chat_id, "Você ainda não possui agendamentos.")
     except:
-      bot.send_message(chat_id, "Nenhum agendamento encontrado.")
+        bot.send_message(chat_id, "Nenhum agendamento encontrado.")
+
+# ================= PAINEL ADMIN =================
 
 @bot.message_handler(commands=['admin'])
 def painel_admin(message):
@@ -126,6 +138,7 @@ def painel_admin(message):
         bot.send_message(ADMIN_ID, "📊 TODOS OS AGENDAMENTOS:\n\n" + dados)
     except:
         bot.send_message(ADMIN_ID, "Nenhum agendamento encontrado.")
-                 
-        print("Bot rodando...")
+
+
+print("Bot rodando...")
 bot.infinity_polling()
