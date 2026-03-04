@@ -25,6 +25,25 @@ def start(message):
         reply_markup=markup
     )
 
+# ================= VER AGENDAMENTOS (ANTES DO responder!) =================
+
+@bot.message_handler(func=lambda message: message.text == "📋 Ver agendamentos")
+def ver_agendamentos(message):
+    chat_id = message.chat.id
+
+    try:
+        with open("agendamentos.txt", "r", encoding="utf-8") as arquivo:
+            linhas = arquivo.readlines()
+
+        meus = [l for l in linhas if f"ID:{chat_id}" in l]
+
+        if meus:
+            bot.send_message(chat_id, "📅 Seus agendamentos:\n\n" + "".join(meus))
+        else:
+            bot.send_message(chat_id, "Você ainda não possui agendamentos.")
+    except:
+        bot.send_message(chat_id, "Nenhum agendamento encontrado.")
+
 # ================= AGENDAR =================
 
 @bot.message_handler(func=lambda message: message.text == "📅 Agendar horário")
@@ -104,25 +123,6 @@ def responder(message):
         bot.send_message(chat_id, "✅ Pedido enviado! Em breve entraremos em contato.")
 
         del usuarios[chat_id]
-
-# ================= VER AGENDAMENTOS =================
-
-@bot.message_handler(func=lambda message: message.text == "📋 Ver agendamentos")
-def ver_agendamentos(message):
-    chat_id = message.chat.id
-
-    try:
-        with open("agendamentos.txt", "r", encoding="utf-8") as arquivo:
-            linhas = arquivo.readlines()
-
-        meus = [l for l in linhas if f"ID:{chat_id}" in l]
-
-        if meus:
-            bot.send_message(chat_id, "📅 Seus agendamentos:\n\n" + "".join(meus))
-        else:
-            bot.send_message(chat_id, "Você ainda não possui agendamentos.")
-    except:
-        bot.send_message(chat_id, "Nenhum agendamento encontrado.")
 
 # ================= PAINEL ADMIN =================
 
