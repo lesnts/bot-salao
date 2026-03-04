@@ -25,10 +25,6 @@ def start(message):
         reply_markup=markup
     )
 
-
-@bot.message_handler(commands=['id'])
-def ver_id(message):
-    bot.send_message(message.chat.id, f"Seu ID é: {message.chat.id}")
     
 # ================= VER AGENDAMENTOS (ANTES DO responder!) =================
 
@@ -134,16 +130,20 @@ def responder(message):
 @bot.message_handler(commands=['admin'])
 def painel_admin(message):
     if message.chat.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "⛔ Você não tem permissão.")
         return
 
     try:
         with open("agendamentos.txt", "r", encoding="utf-8") as arquivo:
             dados = arquivo.read()
 
-        bot.send_message(ADMIN_ID, "📊 TODOS OS AGENDAMENTOS:\n\n" + dados)
-    except:
+        if dados.strip() == "":
+            bot.send_message(ADMIN_ID, "Nenhum agendamento encontrado.")
+        else:
+            bot.send_message(ADMIN_ID, "📊 TODOS OS AGENDAMENTOS:\n\n" + dados)
+
+    except FileNotFoundError:
         bot.send_message(ADMIN_ID, "Nenhum agendamento encontrado.")
-
-
+        
 print("Bot rodando...")
 bot.infinity_polling()
