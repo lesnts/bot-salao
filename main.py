@@ -146,4 +146,4 @@ def painel_admin(message):
         bot.send_message(ADMIN_ID, "Nenhum agendamento encontrado.")
         
 print("Bot rodando...")
-bot.infinity_polling()
+bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
