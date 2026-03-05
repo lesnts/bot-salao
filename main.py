@@ -160,6 +160,11 @@ def admin(message):
     else:
         texto += "Nenhum agendamento."
     bot.send_message(ADMIN_ID, texto)
+    
+# ================= PEGAR ID =================
+@bot.message_handler(commands=['id'])
+def pegar_id(message):
+    bot.send_message(message.chat.id, f"Seu ID é: {message.chat.id}")
 
 # ================= WEBHOOK =================
 @app.route('/', methods=['POST'])
