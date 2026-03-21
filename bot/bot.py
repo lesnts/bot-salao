@@ -6,7 +6,7 @@ from flask import Flask, request
 import telebot
 from telebot import types
 
-from bot.database import *
+from database import *
 
 # ================= CONFIG =================
 
