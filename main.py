@@ -6,15 +6,26 @@ from flask import Flask, request
 import telebot
 from telebot import types
 
+from bot.database import *
+
 TOKEN = os.getenv("TOKEN")
-ADMIN_ID = 1532248370
-WEBHOOK_URL = "https://bot-salao-production.up.railway.app/"
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
+criar_tabela()
+
 usuarios = {}
+
 HORARIOS_DISPONIVEIS = ["10:00", "11:00", "14:00", "15:00", "16:00"]
+
+SERVICOS = {
+    "Corte": 30,
+    "Escova": 40,
+    "Progressiva": 120
+}
 
 # ================= MENU =================
 
@@ -39,16 +50,17 @@ def admin(message):
         bot.send_message(message.chat.id, "⛔ Sem permissão")
         return
 
-    try:
-        with open("agendamentos.txt", "r", encoding="utf-8") as f:
-            dados = f.read()
+    dados = listar_agendamentos()
 
-        if dados.strip() == "":
-            bot.send_message(ADMIN_ID, "Nenhum agendamento.")
-        else:
-            bot.send_message(ADMIN_ID, "📊 TODOS OS AGENDAMENTOS:\n\n" + dados)
-    except:
+    if not dados:
         bot.send_message(ADMIN_ID, "Nenhum agendamento.")
+        return
+
+    texto = "📊 TODOS OS AGENDAMENTOS:\n\n"
+    for nome, servico, valor, data, hora in dados:
+        texto += f"{data} {hora} - {nome} ({servico}) R${valor}\n"
+
+    bot.send_message(ADMIN_ID, texto)
 
 # ================= AGENDAR =================
 
@@ -75,11 +87,22 @@ def fluxo(message):
     elif etapa == "telefone":
         usuarios[chat_id]["telefone"] = message.text
         usuarios[chat_id]["etapa"] = "servico"
-        bot.send_message(chat_id, "Qual serviço deseja?")
+
+        texto = "Escolha o serviço:\n\n"
+        for s, v in SERVICOS.items():
+            texto += f"{s} - R${v}\n"
+
+        bot.send_message(chat_id, texto)
 
     elif etapa == "servico":
+        if message.text not in SERVICOS:
+            bot.send_message(chat_id, "Serviço inválido.")
+            return
+
         usuarios[chat_id]["servico"] = message.text
+        usuarios[chat_id]["valor"] = SERVICOS[message.text]
         usuarios[chat_id]["etapa"] = "data"
+
         bot.send_message(chat_id, "Digite a data (DD/MM/AAAA):")
 
     elif etapa == "data":
@@ -89,11 +112,11 @@ def fluxo(message):
             limite = hoje + timedelta(days=30)
 
             if data_escolhida.date() < hoje.date():
-                bot.send_message(chat_id, "❌ Não pode agendar para data passada.")
+                bot.send_message(chat_id, "❌ Data passada.")
                 return
 
             if data_escolhida > limite:
-                bot.send_message(chat_id, "❌ Só é possível agendar até 30 dias à frente.")
+                bot.send_message(chat_id, "❌ Máximo 30 dias.")
                 return
 
             usuarios[chat_id]["data"] = message.text
@@ -101,19 +124,8 @@ def fluxo(message):
 
             markup = types.InlineKeyboardMarkup()
 
-            try:
-                with open("agendamentos.txt", "r", encoding="utf-8") as f:
-                    linhas = f.readlines()
-                    horarios_ocupados = [
-                        l.split("|")[5].split(":")[1].strip()
-                        for l in linhas
-                        if f"Data:{message.text}" in l
-                    ]
-            except:
-                horarios_ocupados = []
-
             for h in HORARIOS_DISPONIVEIS:
-                if h in horarios_ocupados:
+                if horario_ocupado(message.text, h):
                     markup.add(types.InlineKeyboardButton(f"{h} ❌", callback_data="ocupado"))
                 else:
                     markup.add(types.InlineKeyboardButton(f"{h} ✅", callback_data=h))
@@ -121,7 +133,7 @@ def fluxo(message):
             bot.send_message(chat_id, "Escolha o horário:", reply_markup=markup)
 
         except:
-            bot.send_message(chat_id, "Formato inválido. Use DD/MM/AAAA.")
+            bot.send_message(chat_id, "Formato inválido.")
 
 # ================= CALLBACK =================
 
@@ -131,61 +143,50 @@ def callback(call):
     data_callback = call.data
 
     if data_callback == "ocupado":
-        bot.answer_callback_query(call.id, "Esse horário já está ocupado.")
+        bot.answer_callback_query(call.id, "Já ocupado.")
         return
 
-    nome = usuarios[chat_id]["nome"]
-    telefone = usuarios[chat_id]["telefone"]
-    servico = usuarios[chat_id]["servico"]
-    data_agendada = usuarios[chat_id]["data"]
-    horario = data_callback
+    u = usuarios[chat_id]
 
-    try:
-        with open("agendamentos.txt", "r", encoding="utf-8") as f:
-            linhas = f.readlines()
-            for l in linhas:
-                if f"Data:{data_agendada}" in l and f"Horário:{horario}" in l:
-                    bot.answer_callback_query(call.id, "Horário acabou de ser ocupado.")
-                    return
-    except:
-        pass
+    if horario_ocupado(u["data"], data_callback):
+        bot.answer_callback_query(call.id, "Acabou de ser ocupado.")
+        return
 
-    with open("agendamentos.txt", "a", encoding="utf-8") as f:
-        f.write(f"ID:{chat_id} | Nome:{nome} | Telefone:{telefone} | Serviço:{servico} | Data:{data_agendada} | Horário:{horario}\n")
+    salvar_agendamento(
+        chat_id,
+        u["nome"],
+        u["telefone"],
+        u["servico"],
+        u["valor"],
+        u["data"],
+        data_callback
+    )
 
-    bot.send_message(chat_id, f"✅ Agendado para {data_agendada} às {horario}")
-    bot.send_message(ADMIN_ID, f"📢 Novo agendamento!\n{nome} | {servico} | {data_agendada} | {horario}")
+    bot.send_message(chat_id, f"✅ Agendado {u['data']} às {data_callback}")
+
+    bot.send_message(
+        ADMIN_ID,
+        f"📢 Novo:\n{u['nome']} | {u['servico']} | R${u['valor']} | {u['data']} {data_callback}"
+    )
 
     del usuarios[chat_id]
     menu_principal(chat_id)
 
-# ================= RELATÓRIO AUTOMÁTICO =================
+# ================= RELATÓRIO =================
 
 def relatorio_diario():
     while True:
         agora = datetime.now()
+
         if agora.hour == 20 and agora.minute == 30:
             hoje = agora.strftime("%d/%m/%Y")
-            relatorio = []
-            try:
-                with open("agendamentos.txt", "r", encoding="utf-8") as f:
-                    for l in f.readlines():
-                        if f"Data:{hoje}" in l:
-                            relatorio.append(l.strip())
-            except:
-                pass
 
-            if relatorio:
-                texto = f"📊 Relatório do Dia – {hoje}\n\nTotal: {len(relatorio)}\n\n"
-                for r in relatorio:
-                    partes = r.split("|")
-                    nome = partes[1].split(":")[1].strip()
-                    servico = partes[3].split(":")[1].strip()
-                    horario = partes[5].split(":")[1].strip()
-                    texto += f"• {nome} – {horario} – {servico}\n"
-                bot.send_message(ADMIN_ID, texto)
-            else:
-                bot.send_message(ADMIN_ID, f"📊 Relatório do Dia – {hoje}\n\nNenhum agendamento hoje.")
+            total = faturamento_por_dia(hoje)
+
+            bot.send_message(
+                ADMIN_ID,
+                f"📊 Relatório {hoje}\n💰 Faturamento: R${total}"
+            )
 
             time.sleep(60)
 
