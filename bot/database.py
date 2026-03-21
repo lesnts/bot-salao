@@ -1,8 +1,7 @@
 import sqlite3
 
 def conectar():
-    conn = sqlite3.connect("agendamentos.db")
-    return conn
+    return sqlite3.connect("agendamentos.db")
 
 
 def criar_tabela():
@@ -27,10 +26,10 @@ def salvar_agendamento(nome, servico, data, hora):
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("""
-    INSERT INTO agendamentos (nome, servico, data, hora)
-    VALUES (?, ?, ?, ?)
-    """, (nome, servico, data, hora))
+    cursor.execute(
+        "INSERT INTO agendamentos (nome, servico, data, hora) VALUES (?, ?, ?, ?)",
+        (nome, servico, data, hora)
+    )
 
     conn.commit()
     conn.close()
@@ -44,10 +43,10 @@ def listar_agendamentos():
     dados = cursor.fetchall()
 
     conn.close()
-return 
+    return dados
+
 
 def horario_ocupado(data, hora):
-
     conn = conectar()
     cursor = conn.cursor()
 
@@ -59,6 +58,4 @@ def horario_ocupado(data, hora):
     resultado = cursor.fetchone()
 
     conn.close()
-
     return resultado is not None
-  
