@@ -42,6 +42,13 @@ def menu_principal(chat_id):
 def start(message):
     menu_principal(message.chat.id)
 
+def get_cliente(chat_id):
+    cliente = buscar_cliente(chat_id)
+    if not cliente:
+        criar_cliente(chat_id)
+        cliente = buscar_cliente(chat_id)
+    return cliente
+    
 # ================= ADMIN =================
 
 @bot.message_handler(commands=['admin'])
