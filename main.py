@@ -150,34 +150,56 @@ def callback(call):
     chat_id = call.message.chat.id
     data_callback = call.data
 
+    # 🚫 botão de horário ocupado
     if data_callback == "ocupado":
         bot.answer_callback_query(call.id, "Já ocupado.")
         return
 
-cliente = get_cliente(chat_id)
+    # 👤 cliente (multi-tenant)
+    cliente = get_cliente(chat_id)
 
-ok = salvar_agendamento(
-    cliente["id"],
-    u["nome"],
-    u["telefone"],
-    u["servico"],
-    u["valor"],
-    u["data"],
-    data_callback
-)
+    # 🧠 estado do usuário
+    u = usuarios.get(chat_id)
+    if not u:
+        bot.answer_callback_query(call.id, "Sessão expirada. Tente novamente.")
+        return
+
+    # 🔒 checagem extra (evita concorrência)
+    if horario_ocupado(cliente["id"], u["data"], data_callback):
+        bot.answer_callback_query(call.id, "Acabou de ser ocupado.")
+        return
+
+    # 💾 salvar agendamento com proteção
+    ok = salvar_agendamento(
+        cliente["id"],
+        u["nome"],
+        u["telefone"],
+        u["servico"],
+        u["valor"],
+        u["data"],
+        data_callback
+    )
 
     if not ok:
         bot.send_message(chat_id, "❌ Horário já foi ocupado.")
         return
 
-bot.send_message(chat_id, f"✅ Agendado {u['data']} às {data_callback}")
-
+    # ✅ confirmação pro usuário
     bot.send_message(
-        ADMIN_ID,
-        f"📢 Novo:\n{u['nome']} | {u['servico']} | R${u['valor']} | {u['data']} {data_callback}"
+        chat_id,
+        f"✅ Agendado!\n📅 {u['data']} às {data_callback}\n💇 {u['servico']}"
     )
 
+    # 📢 aviso pro cliente (dono do salão)
+    bot.send_message(
+        chat_id,
+        f"📢 Novo agendamento:\n👤 {u['nome']}\n📞 {u['telefone']}\n💇 {u['servico']}\n💰 R${u['valor']}\n📅 {u['data']} {data_callback}"
+    )
+
+    # 🧹 limpa sessão
     del usuarios[chat_id]
+
+    # 🔙 volta pro menu
     menu_principal(chat_id)
 
 # ================= RELATÓRIO =================
