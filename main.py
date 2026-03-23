@@ -240,3 +240,18 @@ if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+@app.route("/dashboard/<int:telegram_id>")
+def dashboard(telegram_id):
+    cliente = buscar_cliente(telegram_id)
+
+    if not cliente:
+        return "Cliente não encontrado"
+
+    agendamentos = listar_agendamentos(cliente["id"])
+
+    return render_template(
+        "dashboard.html",
+        cliente=cliente,
+        agendamentos=agendamentos
+    )
