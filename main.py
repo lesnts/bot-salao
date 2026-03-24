@@ -2,12 +2,11 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
-from flask import Flask, request
+from flask import Flask, request, render_template
 import telebot
 from telebot import types
 
 from bot.database import *
-from flask import Flask, request, render_template
 
 TOKEN = os.getenv("TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
@@ -52,24 +51,34 @@ def start(message):
     get_cliente(message.chat.id)
     menu_principal(message.chat.id)
 
-# ================= ADMIN (AGORA É DO PRÓPRIO CLIENTE) =================
+# ================= MEUS AGENDAMENTOS =================
 
-@bot.message_handler(commands=['admin'])
-def admin(message):
+@bot.message_handler(func=lambda m: m.text == "📋 Meus agendamentos")
+def meus_agendamentos(message):
     chat_id = message.chat.id
     cliente = get_cliente(chat_id)
 
     dados = listar_agendamentos(cliente["id"])
 
     if not dados:
-        bot.send_message(chat_id, "Nenhum agendamento.")
+        bot.send_message(chat_id, "Você não tem agendamentos.")
         return
 
-    texto = "📊 SEUS AGENDAMENTOS:\n\n"
+    texto = "📅 Seus agendamentos:\n\n"
+
     for nome, servico, valor, data, hora in dados:
-        texto += f"{data} {hora} - {nome} ({servico}) R${valor}\n"
+        texto += f"{data} {hora} - {servico} (R${valor})\n"
 
     bot.send_message(chat_id, texto)
+
+# ================= CANCELAR =================
+
+@bot.message_handler(func=lambda m: m.text == "❌ Cancelar")
+def cancelar(message):
+    chat_id = message.chat.id
+    usuarios.pop(chat_id, None)
+    bot.send_message(chat_id, "Operação cancelada.")
+    menu_principal(chat_id)
 
 # ================= AGENDAR =================
 
@@ -78,6 +87,8 @@ def agendar(message):
     chat_id = message.chat.id
     usuarios[chat_id] = {"etapa": "nome"}
     bot.send_message(chat_id, "Qual seu nome?")
+
+# ================= FLUXO =================
 
 @bot.message_handler(func=lambda m: True)
 def fluxo(message):
@@ -97,19 +108,22 @@ def fluxo(message):
         usuarios[chat_id]["telefone"] = message.text
         usuarios[chat_id]["etapa"] = "servico"
 
-        texto = "Escolha o serviço:\n\n"
-        for s, v in SERVICOS.items():
-            texto += f"{s} - R${v}\n"
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
 
-        bot.send_message(chat_id, texto)
+        for s, v in SERVICOS.items():
+            markup.add(types.KeyboardButton(f"{s} - R${v}"))
+
+        bot.send_message(chat_id, "Escolha o serviço:", reply_markup=markup)
 
     elif etapa == "servico":
-        if message.text not in SERVICOS:
+        servico_nome = message.text.split(" - ")[0]
+
+        if servico_nome not in SERVICOS:
             bot.send_message(chat_id, "Serviço inválido.")
             return
 
-        usuarios[chat_id]["servico"] = message.text
-        usuarios[chat_id]["valor"] = SERVICOS[message.text]
+        usuarios[chat_id]["servico"] = servico_nome
+        usuarios[chat_id]["valor"] = SERVICOS[servico_nome]
         usuarios[chat_id]["etapa"] = "data"
 
         bot.send_message(chat_id, "Digite a data (DD/MM/AAAA):")
@@ -161,7 +175,7 @@ def callback(call):
 
     u = usuarios.get(chat_id)
     if not u:
-        bot.answer_callback_query(call.id, "Sessão expirada.")
+        bot.answer_callback_query(call.id, "Sessão expirada. Faça /start novamente.")
         return
 
     if horario_ocupado(cliente["id"], u["data"], data_callback):
@@ -195,31 +209,22 @@ def callback(call):
     del usuarios[chat_id]
     menu_principal(chat_id)
 
-# ================= RELATÓRIO =================
+# ================= DASHBOARD =================
 
-def relatorio_diario():
-    while True:
-        agora = datetime.now()
+@app.route("/dashboard/<int:telegram_id>")
+def dashboard(telegram_id):
+    cliente = buscar_cliente(telegram_id)
 
-        if agora.hour == 20 and agora.minute == 30:
-            hoje = agora.strftime("%d/%m/%Y")
+    if not cliente:
+        return "Cliente não encontrado"
 
-            # ⚠️ versão simples (MVP)
-            for chat_id in usuarios.keys():
-                cliente = get_cliente(chat_id)
+    agendamentos = listar_agendamentos(cliente["id"])
 
-                total = faturamento_por_dia(cliente["id"], hoje)
-
-                bot.send_message(
-                    chat_id,
-                    f"📊 Relatório {hoje}\n💰 R${total}"
-                )
-
-            time.sleep(60)
-
-        time.sleep(30)
-
-threading.Thread(target=relatorio_diario, daemon=True).start()
+    return render_template(
+        "dashboard.html",
+        cliente=cliente,
+        agendamentos=agendamentos
+    )
 
 # ================= WEBHOOK =================
 
@@ -236,22 +241,7 @@ def webhook():
 def check():
     return "Bot ativo", 200
 
-from flask import render_template
-
-@app.route("/dashboard/<int:telegram_id>")
-def dashboard(telegram_id):
-    cliente = buscar_cliente(telegram_id)
-
-    if not cliente:
-        return "Cliente não encontrado"
-
-    agendamentos = listar_agendamentos(cliente["id"])
-
-    return render_template(
-        "dashboard.html",
-        cliente=cliente,
-        agendamentos=agendamentos
-    )
+# ================= START =================
 
 if __name__ == "__main__":
     bot.remove_webhook()
