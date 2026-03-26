@@ -190,7 +190,7 @@ def fluxo(message):
 
 # ================= CALLBACK COM CONFIRMAÇÃO =================
 
-@bot.callback_query_handler(func=lambda c: True)
+@bot.callback_query_handler(func=lambda c: ":" in c.data)
 def callback(call):
     chat_id = call.message.chat.id
     data_callback = call.data
@@ -224,15 +224,20 @@ def callback(call):
     )
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("confirmar"))
-def confirmar(call):
+def confirmar_agendamento(call):
     chat_id = call.message.chat.id
-    horario = call.data.split("|")[1]
 
     cliente = get_cliente(chat_id)
     u = usuarios.get(chat_id)
 
     if not u:
         bot.answer_callback_query(call.id, "Sessão expirada.")
+        return
+
+    horario = u["horario"]
+
+    if horario_ocupado(cliente["id"], u["data"], horario):
+        bot.answer_callback_query(call.id, "Horário já ocupado.")
         return
 
     ok = salvar_agendamento(
@@ -244,6 +249,18 @@ def confirmar(call):
         u["data"],
         horario
     )
+
+    if not ok:
+        bot.send_message(chat_id, "❌ Já foi ocupado.")
+        return
+
+    bot.send_message(
+        chat_id,
+        f"✅ Agendado!\n📅 {u['data']} às {horario}\n💇 {u['servico']}"
+    )
+
+    del usuarios[chat_id]
+    menu_principal(chat_id)
 
     if not ok:
         bot.send_message(chat_id, "❌ Horário já ocupado.")
