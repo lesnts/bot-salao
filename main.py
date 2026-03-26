@@ -1,4 +1,3 @@
-# rebuild force
 import os
 import threading
 import time
@@ -27,6 +26,16 @@ SERVICOS = {
     "Progressiva": 120
 }
 
+DIAS_SEMANA = {
+    0: "Segunda",
+    1: "Terça",
+    2: "Quarta",
+    3: "Quinta",
+    4: "Sexta",
+    5: "Sábado",
+    6: "Domingo"
+}
+
 # ================= CLIENTE =================
 
 def get_cliente(chat_id):
@@ -52,29 +61,6 @@ def start(message):
     get_cliente(message.chat.id)
     menu_principal(message.chat.id)
 
-# ================= DATAS PREMIUM =================
-
-def gerar_botoes_datas():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-
-    hoje = datetime.now()
-
-    dias_semana = [
-        "Segunda", "Terça", "Quarta",
-        "Quinta", "Sexta", "Sábado", "Domingo"
-    ]
-
-    for i in range(7):
-        dia = hoje + timedelta(days=i)
-
-        nome_dia = dias_semana[dia.weekday()]
-        data_formatada = dia.strftime("%d/%m")
-
-        texto = f"{nome_dia} • {data_formatada}"
-        markup.add(types.KeyboardButton(texto))
-
-    return markup
-
 # ================= MEUS AGENDAMENTOS =================
 
 @bot.message_handler(func=lambda m: m.text == "📋 Meus agendamentos")
@@ -85,24 +71,14 @@ def meus_agendamentos(message):
     dados = listar_agendamentos(cliente["id"])
 
     if not dados:
-        bot.send_message(chat_id, "Você não tem agendamentos.")
+        bot.send_message(chat_id, "Você não possui agendamentos.")
         return
 
-    texto = "📅 Seus agendamentos:\n\n"
-
+    texto = "📋 Seus agendamentos:\n\n"
     for nome, servico, valor, data, hora in dados:
-        texto += f"{data} {hora} - {servico} (R${valor})\n"
+        texto += f"{data} às {hora} - {servico} (R${valor})\n"
 
     bot.send_message(chat_id, texto)
-
-# ================= CANCELAR =================
-
-@bot.message_handler(func=lambda m: m.text == "❌ Cancelar")
-def cancelar(message):
-    chat_id = message.chat.id
-    usuarios.pop(chat_id, None)
-    bot.send_message(chat_id, "Operação cancelada.")
-    menu_principal(chat_id)
 
 # ================= AGENDAR =================
 
@@ -111,8 +87,6 @@ def agendar(message):
     chat_id = message.chat.id
     usuarios[chat_id] = {"etapa": "nome"}
     bot.send_message(chat_id, "Qual seu nome?")
-
-# ================= FLUXO =================
 
 @bot.message_handler(func=lambda m: True)
 def fluxo(message):
@@ -132,7 +106,7 @@ def fluxo(message):
         usuarios[chat_id]["telefone"] = message.text
         usuarios[chat_id]["etapa"] = "servico"
 
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
         for s, v in SERVICOS.items():
             markup.add(types.KeyboardButton(f"{s} - R${v}"))
@@ -150,27 +124,22 @@ def fluxo(message):
         usuarios[chat_id]["valor"] = SERVICOS[servico_nome]
         usuarios[chat_id]["etapa"] = "data"
 
-        markup = gerar_botoes_datas()
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+
+        hoje = datetime.now()
+
+        for i in range(7):
+            dia = hoje + timedelta(days=i)
+            nome_dia = DIAS_SEMANA[dia.weekday()]
+            texto = f"{nome_dia} • {dia.strftime('%d/%m')}"
+            markup.add(types.KeyboardButton(texto))
+
         bot.send_message(chat_id, "Escolha a data:", reply_markup=markup)
 
     elif etapa == "data":
         try:
-            # extrai data do botão
-            data_texto = message.text.split(" • ")[1] + f"/{datetime.now().year}"
-
-            data_escolhida = datetime.strptime(data_texto, "%d/%m/%Y")
-            hoje = datetime.now()
-            limite = hoje + timedelta(days=30)
-
-            if data_escolhida.date() < hoje.date():
-                bot.send_message(chat_id, "❌ Data passada.")
-                return
-
-            if data_escolhida > limite:
-                bot.send_message(chat_id, "❌ Máximo 30 dias.")
-                return
-
-            usuarios[chat_id]["data"] = data_texto
+            data_formatada = message.text.split(" • ")[1] + f"/{datetime.now().year}"
+            usuarios[chat_id]["data"] = data_formatada
             usuarios[chat_id]["etapa"] = "horario"
 
             cliente = get_cliente(chat_id)
@@ -178,116 +147,90 @@ def fluxo(message):
             markup = types.InlineKeyboardMarkup()
 
             for h in HORARIOS_DISPONIVEIS:
-                if horario_ocupado(cliente["id"], data_texto, h):
+                if horario_ocupado(cliente["id"], data_formatada, h):
                     markup.add(types.InlineKeyboardButton(f"{h} ❌", callback_data="ocupado"))
                 else:
                     markup.add(types.InlineKeyboardButton(f"{h} ✅", callback_data=h))
 
             bot.send_message(chat_id, "Escolha o horário:", reply_markup=markup)
 
-        except Exception:
+        except:
             bot.send_message(chat_id, "Formato inválido.")
 
-# ================= CALLBACK COM CONFIRMAÇÃO =================
+# ================= CALLBACK HORÁRIO =================
 
 @bot.callback_query_handler(func=lambda c: ":" in c.data)
-def callback(call):
+def selecionar_horario(call):
     chat_id = call.message.chat.id
-    data_callback = call.data
+    horario = call.data
 
-    if data_callback == "ocupado":
+    if horario == "ocupado":
         bot.answer_callback_query(call.id, "Já ocupado.")
         return
 
     u = usuarios.get(chat_id)
     if not u:
-        bot.answer_callback_query(call.id, "Sessão expirada.")
         return
 
-    cliente = get_cliente(chat_id)
+    u["horario"] = horario
 
-    if horario_ocupado(cliente["id"], u["data"], data_callback):
-        bot.answer_callback_query(call.id, "Acabou de ser ocupado.")
-        return
-
-    # confirmação antes de salvar
     markup = types.InlineKeyboardMarkup()
     markup.add(
-        types.InlineKeyboardButton("✅ Confirmar", callback_data=f"confirmar|{data_callback}"),
+        types.InlineKeyboardButton("✅ Confirmar", callback_data="confirmar"),
         types.InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")
     )
 
     bot.send_message(
         chat_id,
-        f"Confirmar agendamento?\n📅 {u['data']} às {data_callback}\n💇 {u['servico']}",
+        f"Confirmar agendamento?\n📅 {u['data']} às {horario}\n💇 {u['servico']}",
         reply_markup=markup
     )
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("confirmar"))
-def confirmar_agendamento(call):
+# ================= CALLBACK CONFIRMAR =================
+
+@bot.callback_query_handler(func=lambda c: c.data == "confirmar")
+def confirmar(call):
     chat_id = call.message.chat.id
 
     cliente = get_cliente(chat_id)
     u = usuarios.get(chat_id)
 
     if not u:
-        bot.answer_callback_query(call.id, "Sessão expirada.")
         return
 
-    horario = u["horario"]
-
-    if horario_ocupado(cliente["id"], u["data"], horario):
+    if horario_ocupado(cliente["id"], u["data"], u["horario"]):
         bot.answer_callback_query(call.id, "Horário já ocupado.")
         return
 
-    ok = salvar_agendamento(
+    salvar_agendamento(
         cliente["id"],
         u["nome"],
         u["telefone"],
         u["servico"],
         u["valor"],
         u["data"],
-        horario
+        u["horario"]
     )
-
-    if not ok:
-        bot.send_message(chat_id, "❌ Já foi ocupado.")
-        return
 
     bot.send_message(
         chat_id,
-        f"✅ Agendado!\n📅 {u['data']} às {horario}\n💇 {u['servico']}"
+        f"✅ Agendado!\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}"
     )
 
     del usuarios[chat_id]
     menu_principal(chat_id)
 
-    if not ok:
-        bot.send_message(chat_id, "❌ Horário já ocupado.")
-        return
-
-    bot.send_message(chat_id, "✅ Agendamento confirmado!")
-
-    del usuarios[chat_id]
-    menu_principal(chat_id)
+# ================= CALLBACK CANCELAR =================
 
 @bot.callback_query_handler(func=lambda c: c.data == "cancelar")
-def cancelar_callback(call):
-    bot.send_message(call.message.chat.id, "Agendamento cancelado.")
-    menu_principal(call.message.chat.id)
+def cancelar(call):
+    chat_id = call.message.chat.id
 
-# ================= DASHBOARD =================
+    if chat_id in usuarios:
+        del usuarios[chat_id]
 
-@app.route("/dashboard/<int:telegram_id>")
-def dashboard(telegram_id):
-    cliente = buscar_cliente(telegram_id)
-
-    if not cliente:
-        return "Cliente não encontrado"
-
-    agendamentos = listar_agendamentos(cliente["id"])
-
-    return render_template("dashboard.html", cliente=cliente, agendamentos=agendamentos)
+    bot.send_message(chat_id, "❌ Agendamento cancelado.")
+    menu_principal(chat_id)
 
 # ================= WEBHOOK =================
 
@@ -304,10 +247,26 @@ def webhook():
 def check():
     return "Bot ativo", 200
 
+# ================= DASHBOARD =================
+
+@app.route("/dashboard/<int:telegram_id>")
+def dashboard(telegram_id):
+    cliente = buscar_cliente(telegram_id)
+
+    if not cliente:
+        return "Cliente não encontrado"
+
+    agendamentos = listar_agendamentos(cliente["id"])
+
+    return render_template(
+        "dashboard.html",
+        cliente=cliente,
+        agendamentos=agendamentos
+    )
+
 # ================= START =================
 
 if __name__ == "__main__":
     bot.remove_webhook()
-    bot.set_webhook(url=WEBHOOK_URL)
+    bot.set_webhook(url=WEBHOOK_URL + "/webhook")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-    # force deploy
