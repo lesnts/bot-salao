@@ -79,6 +79,29 @@ def meus_agendamentos(message):
 
     bot.send_message(chat_id, texto)
 
+def salvar_agendamento(cliente_id, nome, telefone, servico, valor, data, hora):
+    conn = conectar()
+    cursor = conn.cursor()
+
+    # 🔒 verifica se já existe
+    cursor.execute("""
+        SELECT id FROM agendamentos
+        WHERE cliente_id = ? AND data = ? AND hora = ?
+    """, (cliente_id, data, hora))
+
+    if cursor.fetchone():
+        conn.close()
+        return False  # já existe
+
+    cursor.execute("""
+        INSERT INTO agendamentos (cliente_id, nome, telefone, servico, valor, data, hora)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (cliente_id, nome, telefone, servico, valor, data, hora))
+
+    conn.commit()
+    conn.close()
+    return True
+    
 # ================= AGENDAR =================
 
 @bot.message_handler(func=lambda m: m.text == "📅 Agendar")
