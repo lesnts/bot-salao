@@ -87,7 +87,7 @@ def agendar(message):
     usuarios[message.chat.id] = {"etapa": "nome"}
     bot.send_message(message.chat.id, "Qual seu nome?")
 
-@bot.message_handler(func=lambda m: True)
+@bot.message_handler(func=lambda m: m.chat.id in usuarios)
 def fluxo(message):
     chat_id = message.chat.id
 
