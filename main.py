@@ -15,6 +15,8 @@ app = Flask(__name__)
 
 criar_tabelas()
 
+CREATE UNIQUE INDEX idx_unique_agendamento
+ON agendamentos (cliente_id, data, hora);
 usuarios = {}
 
 HORARIOS_DISPONIVEIS = ["10:00", "11:00", "14:00", "15:00", "16:00"]
