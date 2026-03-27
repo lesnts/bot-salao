@@ -91,108 +91,12 @@ def agendar(message):
 
 # ================= FLUXO (CORRIGIDO) =================
 
-@bot.message_handler(func=lambda m: m.chat.id in usuarios)
-def fluxo(message):
-    chat_id = message.chat.id
-    u = usuarios[chat_id]
+callbacks_processados = set()
 
-    if u.get("confirmado"):
-        return
+@bot.callback_query_handler(func=lambda c: True)
+def callbacks(call):
 
-    etapa = u["etapa"]
-
-    if etapa == "nome":
-        u["nome"] = message.text
-        u["etapa"] = "telefone"
-        bot.send_message(chat_id, "Digite seu telefone:")
-
-    elif etapa == "telefone":
-        u["telefone"] = message.text
-        u["etapa"] = "servico"
-
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        for s, v in SERVICOS.items():
-            markup.add(types.KeyboardButton(f"{s} - R${v}"))
-
-        bot.send_message(chat_id, "Escolha o serviço:", reply_markup=markup)
-
-    elif etapa == "servico":
-        nome = message.text.split(" - ")[0]
-
-        if nome not in SERVICOS:
-            return
-
-        u["servico"] = nome
-        u["valor"] = SERVICOS[nome]
-        u["etapa"] = "data"
-
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        hoje = datetime.now()
-
-        for i in range(7):
-            dia = hoje + timedelta(days=i)
-            texto = f"{DIAS_SEMANA[dia.weekday()]} • {dia.strftime('%d/%m')}"
-            markup.add(types.KeyboardButton(texto))
-
-        bot.send_message(chat_id, "Escolha a data:", reply_markup=markup)
-
-    elif etapa == "data":
-        try:
-            data = message.text.split(" • ")[1] + f"/{datetime.now().year}"
-            u["data"] = data
-            u["etapa"] = "horario"
-
-            cliente = get_cliente(chat_id)
-
-            markup = types.InlineKeyboardMarkup()
-            for h in HORARIOS_DISPONIVEIS:
-                if horario_ocupado(cliente["id"], data, h):
-                    markup.add(types.InlineKeyboardButton(f"{h} ❌", callback_data="ocupado"))
-                else:
-                    markup.add(types.InlineKeyboardButton(f"{h} ✅", callback_data=h))
-
-            bot.send_message(chat_id, "Escolha o horário:", reply_markup=markup)
-
-        except:
-            bot.send_message(chat_id, "Formato inválido.")
-
-# ================= HORÁRIO =================
-
-@bot.callback_query_handler(func=lambda c: ":" in c.data)
-def selecionar_horario(call):
-    bot.answer_callback_query(call.id)
-
-    if call.data == "ocupado":
-        return
-
-    chat_id = call.message.chat.id
-    u = usuarios.get(chat_id)
-
-    if not u:
-        return
-
-    u["horario"] = call.data
-    u["confirmado"] = False
-
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("✅ Confirmar", callback_data="confirmar"),
-        types.InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")
-    )
-
-    bot.edit_message_text(
-        f"Confirmar agendamento?\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        reply_markup=markup
-    )
-
-# ================= CONFIRMAR =================
-
-@bot.callback_query_handler(func=lambda c: c.data == "confirmar")
-def confirmar(call):
-
-    # 🔒 BLOQUEIO POR CALLBACK ID
+    # 🔒 bloqueio absoluto
     if call.id in callbacks_processados:
         return
 
@@ -201,60 +105,85 @@ def confirmar(call):
     bot.answer_callback_query(call.id)
 
     chat_id = call.message.chat.id
+    data = call.data
     u = usuarios.get(chat_id)
 
     if not u:
         return
 
-    cliente = get_cliente(chat_id)
+    # ================= HORÁRIO =================
+    if ":" in data:
 
-    if horario_ocupado(cliente["id"], u["data"], u["horario"]):
+        if data == "ocupado":
+            return
+
+        u["horario"] = data
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("✅ Confirmar", callback_data="confirmar"),
+            types.InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")
+        )
+
         bot.edit_message_text(
-            "❌ Horário já ocupado.",
+            f"Confirmar agendamento?\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+
+    # ================= CONFIRMAR =================
+    elif data == "confirmar":
+
+        if u.get("finalizado"):
+            return
+
+        u["finalizado"] = True
+
+        cliente = get_cliente(chat_id)
+
+        if horario_ocupado(cliente["id"], u["data"], u["horario"]):
+            bot.edit_message_text(
+                "❌ Horário já ocupado.",
+                chat_id=chat_id,
+                message_id=call.message.message_id
+            )
+            return
+
+        salvar_agendamento(
+            cliente["id"],
+            u["nome"],
+            u["telefone"],
+            u["servico"],
+            u["valor"],
+            u["data"],
+            u["horario"]
+        )
+
+        bot.edit_message_text(
+            f"✅ Agendado!\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
             chat_id=chat_id,
             message_id=call.message.message_id
         )
-        return
 
-    salvar_agendamento(
-        cliente["id"],
-        u["nome"],
-        u["telefone"],
-        u["servico"],
-        u["valor"],
-        u["data"],
-        u["horario"]
-    )
+        if chat_id in usuarios:
+            del usuarios[chat_id]
 
-    bot.edit_message_text(
-        f"✅ Agendado!\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
-        chat_id=chat_id,
-        message_id=call.message.message_id
-    )
+        menu_principal(chat_id)
 
-    if chat_id in usuarios:
-        del usuarios[chat_id]
+    # ================= CANCELAR =================
+    elif data == "cancelar":
 
-    menu_principal(chat_id)
+        if chat_id in usuarios:
+            del usuarios[chat_id]
 
-# ================= CANCELAR =================
+        bot.edit_message_text(
+            "❌ Agendamento cancelado.",
+            chat_id=chat_id,
+            message_id=call.message.message_id
+        )
 
-@bot.callback_query_handler(func=lambda c: c.data == "cancelar")
-def cancelar(call):
-    bot.answer_callback_query(call.id)
-
-    chat_id = call.message.chat.id
-
-    if chat_id in usuarios:
-        del usuarios[chat_id]
-
-    bot.edit_message_text(
-        "❌ Agendamento cancelado.",
-        chat_id=chat_id,
-        message_id=call.message.message_id
-    )
-
-    menu_principal(chat_id)
+        menu_principal(chat_id)
 
 # ================= WEBHOOK (ANTI DUPLICAÇÃO) =================
 
