@@ -221,11 +221,15 @@ def confirmar(call):
 
     cliente = get_cliente(chat_id)
 
-    if horario_ocupado(cliente["id"], u["data"], u["horario"]):
-        bot.edit_message_text("❌ Horário já ocupado.",
-                              chat_id=chat_id,
-                              message_id=call.message.message_id)
-        return
+    ok = salvar_agendamento(...)
+
+if not ok:
+    bot.edit_message_text(
+        "❌ Esse horário já foi reservado.",
+        chat_id=chat_id,
+        message_id=call.message.message_id
+    )
+    return
 
     salvar_agendamento(
         cliente["id"],
