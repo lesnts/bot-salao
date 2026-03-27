@@ -198,6 +198,11 @@ def confirmar(call):
     if not u:
         return
 
+    if "finalizado" in u:
+    return
+
+    u["finalizado"] = True
+    
     cliente = get_cliente(chat_id)
 
     # 🔥 VERIFICAÇÃO DUPLA NO BANCO
