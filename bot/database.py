@@ -7,9 +7,7 @@ def conectar():
 def criar_tabelas():
     conn = conectar()
     cursor = conn.cursor()
-
-    cursor.execute("DROP TABLE IF EXISTS agendamentos")
-
+    
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS agendamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
