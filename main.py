@@ -98,9 +98,12 @@ def callbacks(call):
 
     # 🔒 bloqueio absoluto
     if call.id in callbacks_processados:
-        return
+    key = f"{call.message.message_id}:{call.data}"
 
-    callbacks_processados.add(call.id)
+if key in callbacks_processados:
+    return
+
+callbacks_processados.add(key)
 
     bot.answer_callback_query(call.id)
 
@@ -185,7 +188,17 @@ def callbacks(call):
 
         menu_principal(chat_id)
 
+# ================= PROCESSAMENTO ASSÍNCRONO =================
+
+def processar_update(update):
+    try:
+        bot.process_new_updates([update])
+    except Exception as e:
+        print("Erro ao processar update:", e)
+        
 # ================= WEBHOOK (ANTI DUPLICAÇÃO) =================
+
+from threading import Thread
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -193,22 +206,20 @@ def webhook():
         json_string = request.stream.read().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
 
-        # 🔒 BLOQUEIO ABSOLUTO DE DUPLICAÇÃO
+        # 🔒 anti-duplicação
         if update.update_id in updates_processados:
             return '', 200
 
         updates_processados.add(update.update_id)
 
-        # evita crescer infinito
-        if len(updates_processados) > 1000:
-            updates_processados.clear()
+        # ⚡ PROCESSA EM THREAD
+        Thread(target=processar_update, args=(update,)).start()
 
-        bot.process_new_updates([update])
-
+        # 🚀 RESPONDE IMEDIATO
         return '', 200
 
     return '', 403
-
+    
 # ================= DASHBOARD =================
 
 @app.route("/dashboard/<int:telegram_id>")
@@ -233,4 +244,4 @@ if __name__ == "__main__":
     time.sleep(1)
     bot.set_webhook(url=WEBHOOK_URL + "/webhook")
 
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), threaded=True)
