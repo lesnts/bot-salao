@@ -9,15 +9,6 @@ def criar_tabelas():
     cursor = conn.cursor()
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS clientes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_id INTEGER UNIQUE,
-        nome TEXT,
-        plano TEXT DEFAULT 'free'
-    )
-    """)
-
-    cursor.execute("""
     CREATE TABLE IF NOT EXISTS agendamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cliente_id INTEGER,
@@ -26,13 +17,13 @@ def criar_tabelas():
         servico TEXT,
         valor REAL,
         data TEXT,
-        hora TEXT
+        horario TEXT,
+        UNIQUE(cliente_id, data, horario)
     )
     """)
 
     conn.commit()
     conn.close()
-
 
 # ================= CLIENTES =================
 
