@@ -1,134 +1,131 @@
-import sqlite3
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def conectar():
-    return sqlite3.connect("agendamentos.db", check_same_thread=False)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
+
+# ================= TABELAS =================
 
 def criar_tabelas():
     conn = conectar()
-    cursor = conn.cursor()
-    
-    cursor.execute("""
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS clientes (
+        id SERIAL PRIMARY KEY,
+        telegram_id BIGINT UNIQUE
+    );
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS agendamentos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         cliente_id INTEGER,
         nome TEXT,
         telefone TEXT,
         servico TEXT,
-        valor REAL,
-        data TEXT,
-        horario TEXT,
-        UNIQUE(cliente_id, data, horario)
-    )
+        valor INTEGER,
+        data DATE,
+        horario TIME,
+
+        CONSTRAINT unique_agendamento UNIQUE (cliente_id, data, horario)
+    );
     """)
 
     conn.commit()
+    cur.close()
     conn.close()
+
 
 # ================= CLIENTES =================
 
-def criar_cliente(telegram_id, nome="Novo Cliente"):
-    conn = conectar()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    INSERT OR IGNORE INTO clientes (telegram_id, nome)
-    VALUES (?, ?)
-    """, (telegram_id, nome))
-
-    conn.commit()
-    conn.close()
-
-
 def buscar_cliente(telegram_id):
     conn = conectar()
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    cursor.execute("""
-    SELECT id, telegram_id, nome, plano
-    FROM clientes WHERE telegram_id=?
-    """, (telegram_id,))
+    cur.execute("SELECT * FROM clientes WHERE telegram_id = %s", (telegram_id,))
+    cliente = cur.fetchone()
 
-    cliente = cursor.fetchone()
+    cur.close()
     conn.close()
 
-    if cliente:
-        return {
-            "id": cliente[0],
-            "telegram_id": cliente[1],
-            "nome": cliente[2],
-            "plano": cliente[3]
-        }
-    return None
+    return cliente
+
+
+def criar_cliente(telegram_id):
+    conn = conectar()
+    cur = conn.cursor()
+
+    cur.execute("""
+    INSERT INTO clientes (telegram_id)
+    VALUES (%s)
+    ON CONFLICT (telegram_id) DO NOTHING
+    """, (telegram_id,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 # ================= AGENDAMENTOS =================
 
-def salvar_agendamento(cliente_id, nome, telefone, servico, valor, data, hora):
+def salvar_agendamento(cliente_id, nome, telefone, servico, valor, data, horario):
     conn = conectar()
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    # trava contra duplicidade
-    cursor.execute("""
-    SELECT * FROM agendamentos
-    WHERE cliente_id=? AND data=? AND hora=?
-    """, (cliente_id, data, hora))
+    try:
+        cur.execute("""
+        INSERT INTO agendamentos
+        (cliente_id, nome, telefone, servico, valor, data, horario)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (cliente_id, nome, telefone, servico, valor, data, horario))
 
-    if cursor.fetchone():
+        conn.commit()
+
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        print("⚠️ Agendamento duplicado ignorado")
+
+    finally:
+        cur.close()
         conn.close()
-        return False
-
-    cursor.execute("""
-    INSERT INTO agendamentos (cliente_id, nome, telefone, servico, valor, data, hora)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (cliente_id, nome, telefone, servico, valor, data, hora))
-
-    conn.commit()
-    conn.close()
-    return True
 
 
 def listar_agendamentos(cliente_id):
     conn = conectar()
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    cursor.execute("""
-    SELECT nome, servico, valor, data, hora
+    cur.execute("""
+    SELECT nome, servico, valor, data, horario
     FROM agendamentos
-    WHERE cliente_id=?
-    ORDER BY data, hora
+    WHERE cliente_id = %s
+    ORDER BY data, horario
     """, (cliente_id,))
 
-    dados = cursor.fetchall()
+    dados = cur.fetchall()
+
+    cur.close()
     conn.close()
+
     return dados
 
 
-def horario_ocupado(cliente_id, data, hora):
+def horario_ocupado(cliente_id, data, horario):
     conn = conectar()
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    cursor.execute("""
+    cur.execute("""
     SELECT 1 FROM agendamentos
-    WHERE cliente_id=? AND data=? AND hora=?
-    """, (cliente_id, data, hora))
+    WHERE cliente_id = %s AND data = %s AND horario = %s
+    """, (cliente_id, data, horario))
 
-    ocupado = cursor.fetchone() is not None
+    ocupado = cur.fetchone() is not None
+
+    cur.close()
     conn.close()
+
     return ocupado
-
-
-def faturamento_por_dia(cliente_id, data):
-    conn = conectar()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    SELECT SUM(valor)
-    FROM agendamentos
-    WHERE cliente_id=? AND data=?
-    """, (cliente_id, data))
-
-    total = cursor.fetchone()[0]
-    conn.close()
-
-    return total or 0
