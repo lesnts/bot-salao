@@ -6,6 +6,10 @@ import os
 def conectar():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
 
+def conectar():
+    print("🔌 CONECTANDO NO BANCO:", os.getenv("DATABASE_URL"))
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
+
 # ================= CRIAR TABELAS =================
 
 def criar_tabelas():
