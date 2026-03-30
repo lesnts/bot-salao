@@ -261,3 +261,5 @@ if __name__ == "__main__":
     bot.set_webhook(url=WEBHOOK_URL + "/webhook")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+print("🔥 NOVA VERSÃO RODANDO 🔥")
