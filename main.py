@@ -1,10 +1,9 @@
 import os
-import time
-import threading
-from datetime import datetime, timedelta
+from threading import Thread
 from flask import Flask, request, render_template
 import telebot
 from telebot import types
+from datetime import datetime, timedelta
 
 from bot.database import *
 
@@ -45,6 +44,8 @@ def menu_principal(chat_id):
         types.KeyboardButton("❌ Cancelar")
     )
     bot.send_message(chat_id, "Escolha uma opção:", reply_markup=markup)
+
+# ================= START =================
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -90,14 +91,10 @@ def agendar(message):
 
     bot.send_message(chat_id, "Escolha o serviço:", reply_markup=markup)
 
-# ================= CALLBACK PROFISSIONAL =================
+# ================= CALLBACK =================
 
 @bot.callback_query_handler(func=lambda c: True)
 def callbacks(call):
-
-    if call.id in callbacks_processados:
-        return
-    callbacks_processados.add(call.id)
 
     bot.answer_callback_query(call.id)
 
@@ -112,54 +109,54 @@ def callbacks(call):
     except:
         return
 
-    # ================= SERVIÇO =================
+    # SERVIÇO
     if tipo == "servico":
         u["servico"] = valor
-        u["valor"] = SERVICOS.get(valor, 0)
+        u["valor"] = SERVICOS[valor]
 
         markup = types.InlineKeyboardMarkup()
         hoje = datetime.now()
 
         for i in range(5):
             dia = hoje + timedelta(days=i)
-            data_formatada = dia.strftime("%Y-%m-%d")
+            data = dia.strftime("%Y-%m-%d")
 
             markup.add(
                 types.InlineKeyboardButton(
                     dia.strftime("%d/%m"),
-                    callback_data=f"agendar|data|{data_formatada}"
+                    callback_data=f"agendar|data|{data}"
                 )
             )
 
         bot.edit_message_text(
             "Escolha a data:",
-            chat_id=chat_id,
-            message_id=call.message.message_id,
+            chat_id,
+            call.message.message_id,
             reply_markup=markup
         )
 
-    # ================= DATA =================
+    # DATA
     elif tipo == "data":
         u["data"] = valor
 
         markup = types.InlineKeyboardMarkup()
 
-        for hora in HORARIOS_DISPONIVEIS:
+        for h in HORARIOS_DISPONIVEIS:
             markup.add(
                 types.InlineKeyboardButton(
-                    hora,
-                    callback_data=f"agendar|horario|{hora}"
+                    h,
+                    callback_data=f"agendar|horario|{h}"
                 )
             )
 
         bot.edit_message_text(
             "Escolha o horário:",
-            chat_id=chat_id,
-            message_id=call.message.message_id,
+            chat_id,
+            call.message.message_id,
             reply_markup=markup
         )
 
-    # ================= HORÁRIO =================
+    # HORÁRIO
     elif tipo == "horario":
         u["horario"] = valor
 
@@ -170,26 +167,29 @@ def callbacks(call):
         )
 
         bot.edit_message_text(
-            f"Confirmar agendamento?\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
-            chat_id=chat_id,
-            message_id=call.message.message_id,
+            f"Confirmar?\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
+            chat_id,
+            call.message.message_id,
             reply_markup=markup
         )
 
-    # ================= CONFIRMAR =================
+    # CONFIRMAR
     elif tipo == "confirmar":
-
-        if u.get("finalizado"):
-            return
-
-        u["finalizado"] = True
 
         cliente = get_cliente(chat_id)
 
+        if horario_ocupado(cliente["id"], u["data"], u["horario"]):
+            bot.edit_message_text(
+                "❌ Horário já ocupado",
+                chat_id,
+                call.message.message_id
+            )
+            return
+
         salvar_agendamento(
             cliente["id"],
-            u.get("nome", "Cliente"),
-            u.get("telefone", ""),
+            "Cliente",
+            "",
             u["servico"],
             u["valor"],
             u["data"],
@@ -197,30 +197,33 @@ def callbacks(call):
         )
 
         bot.edit_message_text(
-            f"✅ Agendado!\n📅 {u['data']} às {u['horario']}\n💇 {u['servico']}",
-            chat_id=chat_id,
-            message_id=call.message.message_id
+            "✅ Agendado!",
+            chat_id,
+            call.message.message_id
         )
 
         usuarios.pop(chat_id, None)
         menu_principal(chat_id)
 
-    # ================= CANCELAR =================
+    # CANCELAR
     elif tipo == "cancelar":
-
         usuarios.pop(chat_id, None)
 
         bot.edit_message_text(
-            "❌ Agendamento cancelado.",
-            chat_id=chat_id,
-            message_id=call.message.message_id
+            "❌ Cancelado",
+            chat_id,
+            call.message.message_id
         )
 
         menu_principal(chat_id)
 
 # ================= WEBHOOK =================
 
-from threading import Thread
+def processar_update(update):
+    if update_ja_processado(update.update_id):
+        return
+
+    bot.process_new_updates([update])
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -228,21 +231,12 @@ def webhook():
         json_string = request.stream.read().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
 
-        # 🔥 responde NA HORA pro Telegram
         Thread(target=processar_update, args=(update,)).start()
 
         return '', 200
 
     return '', 403
 
-def processar_update(update):
-
-    # 🔥 trava duplicação REAL
-    if update_ja_processado(update.update_id):
-        return
-
-    bot.process_new_updates([update])
-    
 # ================= DASHBOARD =================
 
 @app.route("/dashboard/<int:telegram_id>")
@@ -260,11 +254,10 @@ def dashboard(telegram_id):
         agendamentos=agendamentos
     )
 
-# ================= START =================
+# ================= START APP =================
 
 if __name__ == "__main__":
     bot.remove_webhook()
-    time.sleep(1)
     bot.set_webhook(url=WEBHOOK_URL + "/webhook")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
