@@ -17,7 +17,6 @@ app = Flask(__name__)
 criar_tabelas()
 
 usuarios = {}
-callbacks_processados = set()
 
 HORARIOS_DISPONIVEIS = ["10:00", "11:00", "14:00", "15:00", "16:00"]
 
@@ -227,11 +226,11 @@ def webhook():
         json_string = request.stream.read().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
 
-        threading.Thread(
-            target=bot.process_new_updates,
-            args=([update],)
-        ).start()
+        # 🔥 ANTI DUPLICAÇÃO REAL (BANCO)
+        if update_ja_processado(update.update_id):
+            return '', 200
 
+        bot.process_new_updates([update])
         return '', 200
 
     return '', 403
