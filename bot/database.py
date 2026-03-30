@@ -43,24 +43,30 @@ def criar_tabelas():
 
 # ================= ANTI DUPLICAÇÃO =================
 
-def update_ja_processado(update_id):
-    conn = conectar()
-    cursor = conn.cursor()
+def processar_update(update):
+
+    # 🔒 camada 1: update duplicado
+    if update_ja_processado(update.update_id):
+        return
+
+    chat_id = None
+
+    if update.message:
+        chat_id = update.message.chat.id
+    elif update.callback_query:
+        chat_id = update.callback_query.message.chat.id
+
+    # 🔒 camada 2: lock por usuário
+    if chat_id:
+        if not adquirir_lock(chat_id):
+            return  # já está sendo processado
 
     try:
-        cursor.execute(
-            "INSERT INTO updates_processados (update_id) VALUES (%s)",
-            (update_id,)
-        )
-        conn.commit()
-        return False
-
-    except:
-        conn.rollback()
-        return True
+        bot.process_new_updates([update])
 
     finally:
-        conn.close()
+        if chat_id:
+            liberar_lock(chat_id)
 
 # ================= CLIENTES =================
 
