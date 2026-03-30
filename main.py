@@ -1,10 +1,6 @@
-from threading import Lock
-
-lock_updates = Lock()
-callbacks_processados = set()
-updates_processados = set()
 import os
 import time
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, request, render_template
 import telebot
@@ -21,7 +17,7 @@ app = Flask(__name__)
 criar_tabelas()
 
 usuarios = {}
-ultimo_update_id = None
+callbacks_processados = set()
 
 HORARIOS_DISPONIVEIS = ["10:00", "11:00", "14:00", "15:00", "16:00"]
 
@@ -29,16 +25,6 @@ SERVICOS = {
     "Corte": 30,
     "Escova": 40,
     "Progressiva": 120
-}
-
-DIAS_SEMANA = {
-    0: "Segunda",
-    1: "Terça",
-    2: "Quarta",
-    3: "Quinta",
-    4: "Sexta",
-    5: "Sábado",
-    6: "Domingo"
 }
 
 # ================= CLIENTE =================
@@ -89,48 +75,99 @@ def meus_agendamentos(message):
 
 @bot.message_handler(func=lambda m: m.text == "📅 Agendar")
 def agendar(message):
-    usuarios[message.chat.id] = {"etapa": "nome"}
-    bot.send_message(message.chat.id, "Qual seu nome?")
+    chat_id = message.chat.id
 
-# ================= FLUXO (CORRIGIDO) =================
-lock_callbacks = Lock()
+    usuarios[chat_id] = {}
 
-callbacks_processados = set()
+    markup = types.InlineKeyboardMarkup()
+
+    for servico in SERVICOS:
+        markup.add(
+            types.InlineKeyboardButton(
+                servico,
+                callback_data=f"agendar|servico|{servico}"
+            )
+        )
+
+    bot.send_message(chat_id, "Escolha o serviço:", reply_markup=markup)
+
+# ================= CALLBACK PROFISSIONAL =================
 
 @bot.callback_query_handler(func=lambda c: True)
 def callbacks(call):
 
-    # 🔒 bloqueio absoluto
     if call.id in callbacks_processados:
-    key = f"{call.message.message_id}:{call.data}"
-
-with lock_callbacks:
-    if key in callbacks_processados:
         return
-
-    callbacks_processados.add(key)
+    callbacks_processados.add(call.id)
 
     bot.answer_callback_query(call.id)
 
     chat_id = call.message.chat.id
-    data = call.data
     u = usuarios.get(chat_id)
 
     if not u:
         return
 
+    try:
+        acao, tipo, valor = call.data.split("|")
+    except:
+        return
+
+    # ================= SERVIÇO =================
+    if tipo == "servico":
+        u["servico"] = valor
+        u["valor"] = SERVICOS.get(valor, 0)
+
+        markup = types.InlineKeyboardMarkup()
+        hoje = datetime.now()
+
+        for i in range(5):
+            dia = hoje + timedelta(days=i)
+            data_formatada = dia.strftime("%Y-%m-%d")
+
+            markup.add(
+                types.InlineKeyboardButton(
+                    dia.strftime("%d/%m"),
+                    callback_data=f"agendar|data|{data_formatada}"
+                )
+            )
+
+        bot.edit_message_text(
+            "Escolha a data:",
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+
+    # ================= DATA =================
+    elif tipo == "data":
+        u["data"] = valor
+
+        markup = types.InlineKeyboardMarkup()
+
+        for hora in HORARIOS_DISPONIVEIS:
+            markup.add(
+                types.InlineKeyboardButton(
+                    hora,
+                    callback_data=f"agendar|horario|{hora}"
+                )
+            )
+
+        bot.edit_message_text(
+            "Escolha o horário:",
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+
     # ================= HORÁRIO =================
-    if ":" in data:
-
-        if data == "ocupado":
-            return
-
-        u["horario"] = data
+    elif tipo == "horario":
+        u["horario"] = valor
 
         markup = types.InlineKeyboardMarkup()
         markup.add(
-            types.InlineKeyboardButton("✅ Confirmar", callback_data="confirmar"),
-            types.InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")
+            types.InlineKeyboardButton("✅ Confirmar", callback_data="agendar|confirmar|ok"),
+            types.InlineKeyboardButton("❌ Cancelar", callback_data="agendar|cancelar|ok")
         )
 
         bot.edit_message_text(
@@ -141,7 +178,7 @@ with lock_callbacks:
         )
 
     # ================= CONFIRMAR =================
-    elif data == "confirmar":
+    elif tipo == "confirmar":
 
         if u.get("finalizado"):
             return
@@ -150,20 +187,10 @@ with lock_callbacks:
 
         cliente = get_cliente(chat_id)
 
-        try:
-    salvar_agendamento(...)
-except:
-    bot.edit_message_text(
-        "⚠️ Esse horário já foi reservado.",
-        chat_id=chat_id,
-        message_id=call.message.message_id
-    )
-    return
-
         salvar_agendamento(
             cliente["id"],
-            u["nome"],
-            u["telefone"],
+            u.get("nome", "Cliente"),
+            u.get("telefone", ""),
             u["servico"],
             u["valor"],
             u["data"],
@@ -176,16 +203,13 @@ except:
             message_id=call.message.message_id
         )
 
-        if chat_id in usuarios:
-            del usuarios[chat_id]
-
+        usuarios.pop(chat_id, None)
         menu_principal(chat_id)
 
     # ================= CANCELAR =================
-    elif data == "cancelar":
+    elif tipo == "cancelar":
 
-        if chat_id in usuarios:
-            del usuarios[chat_id]
+        usuarios.pop(chat_id, None)
 
         bot.edit_message_text(
             "❌ Agendamento cancelado.",
@@ -195,18 +219,7 @@ except:
 
         menu_principal(chat_id)
 
-# ================= PROCESSAMENTO ASSÍNCRONO =================
-
-def processar_update(update):
-    try:
-        import threading
-
-    threading.Thread(
-        target=bot.process_new_updates,
-        args=([update],)
-    ).start()
-        
-# ================= WEBHOOK (ANTI DUPLICAÇÃO) =================
+# ================= WEBHOOK =================
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -214,21 +227,15 @@ def webhook():
         json_string = request.stream.read().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
 
-        # 🔒 LOCK (ANTI CONCORRÊNCIA)
-        with lock_updates:
-            if update.update_id in updates_processados:
-                return '', 200
-
-            updates_processados.add(update.update_id)
-
-        # processa fora do lock
-        from threading import Thread
-        Thread(target=processar_update, args=(update,)).start()
+        threading.Thread(
+            target=bot.process_new_updates,
+            args=([update],)
+        ).start()
 
         return '', 200
 
     return '', 403
-    
+
 # ================= DASHBOARD =================
 
 @app.route("/dashboard/<int:telegram_id>")
@@ -253,4 +260,4 @@ if __name__ == "__main__":
     time.sleep(1)
     bot.set_webhook(url=WEBHOOK_URL + "/webhook")
 
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), threaded=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
