@@ -199,9 +199,12 @@ except:
 
 def processar_update(update):
     try:
-        bot.process_new_updates([update])
-    except Exception as e:
-        print("Erro ao processar update:", e)
+        import threading
+
+    threading.Thread(
+        target=bot.process_new_updates,
+        args=([update],)
+    ).start()
         
 # ================= WEBHOOK (ANTI DUPLICAÇÃO) =================
 
