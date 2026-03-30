@@ -220,21 +220,29 @@ def callbacks(call):
 
 # ================= WEBHOOK =================
 
+from threading import Thread
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.stream.read().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
 
-        # 🔥 ANTI DUPLICAÇÃO REAL (BANCO)
-        if update_ja_processado(update.update_id):
-            return '', 200
+        # 🔥 responde NA HORA pro Telegram
+        Thread(target=processar_update, args=(update,)).start()
 
-        bot.process_new_updates([update])
         return '', 200
 
     return '', 403
 
+def processar_update(update):
+
+    # 🔥 trava duplicação REAL
+    if update_ja_processado(update.update_id):
+        return
+
+    bot.process_new_updates([update])
+    
 # ================= DASHBOARD =================
 
 @app.route("/dashboard/<int:telegram_id>")
