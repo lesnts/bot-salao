@@ -1,4 +1,4 @@
-print("🔥 AGORA VAI FUNCIONAR 🔥")
+print("🔥 AGORA REALMENTE FUNCIONANDO 🔥")
 import os
 from threading import Thread
 from flask import Flask, request, render_template
