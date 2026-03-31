@@ -261,7 +261,6 @@ def home():
 
 if __name__ == "__main__":
     bot.remove_webhook()
-    time.sleep(1)
     bot.set_webhook(url=WEBHOOK_URL + "/webhook")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
